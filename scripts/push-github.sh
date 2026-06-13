@@ -11,7 +11,7 @@ else
 fi
 
 echo "→ 推送到 GitHub..."
-git push github main
+git push github main --force
 
 echo "✅ 推送成功！"
 echo "   https://github.com/Justin-Shang/zhihu2xiaohongshu"
