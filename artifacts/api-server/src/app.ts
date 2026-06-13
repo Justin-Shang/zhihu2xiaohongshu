@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
@@ -35,9 +36,23 @@ app.use(
 
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
-app.use(cors({ credentials: true, origin: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// CORS：只允许 Replit Deploy 域名（上线后替换为实际域名）
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").filter(Boolean) || true;
+app.use(cors({ credentials: true, origin: allowedOrigins }));
+
+// Body 大小限制
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+
+// Rate Limiting：API 路由限频
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 分钟窗口
+  max: 30,             // 每个 IP 每分钟最多 30 次请求
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "请求过于频繁，请稍后再试" },
+});
+app.use("/api", apiLimiter);
 
 app.use(
   clerkMiddleware((req) => ({
