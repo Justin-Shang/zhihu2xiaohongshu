@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Copy, CheckCircle2, Sparkles, ArrowRight, Loader2, PenTool, Link2, LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ConvertInputInputType, ConvertInputStyle } from "@workspace/api-client-react";
+import { XhsPreviewButton } from "@/components/XhsPreview";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -72,7 +73,7 @@ export default function Home() {
   const isPending = convertMutation.isPending;
   const result = convertMutation.data;
   const isError = convertMutation.isError;
-  const errorMessage = convertMutation.error?.error || "转换失败，请重试";
+  const errorMessage = convertMutation.error?.data?.error || "转换失败，请重试";
 
   const resultCards = [];
   if (result) {
@@ -270,7 +271,10 @@ export default function Home() {
                                 <p className="text-xs text-muted-foreground">{card.desc}</p>
                               </div>
                             </div>
-                            <CopyButton text={card.content} />
+                            <div className="flex items-center gap-2">
+                              <XhsPreviewButton content={card.content} cardType={card.title} />
+                              <CopyButton text={card.content} />
+                            </div>
                           </div>
                           <div className="p-6 flex-1">
                             <div className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-p:mb-4 max-w-none whitespace-pre-wrap text-foreground/90">
