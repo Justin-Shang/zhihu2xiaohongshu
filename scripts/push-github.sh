@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REPO_URL="https://Justin-Shang:${GITHUB_TOKEN}@github.com/Justin-Shang/zhihu2xiaohongshu.git"
+REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/Justin-Shang/zhihu2xiaohongshu.git"
 
 # Add or update the github remote
 if git remote get-url github &>/dev/null; then
