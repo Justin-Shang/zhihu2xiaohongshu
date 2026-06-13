@@ -9,6 +9,7 @@ const router = Router();
 const apiKey = process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || "";
 const baseURL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 const model = process.env.LLM_MODEL || "deepseek-chat";
+const ZHIHU_API_TOKEN = process.env.ZHIHU_API_TOKEN || "";
 
 const PROMPTS: Record<string, string> = {
   summary: `# 角色
@@ -119,11 +120,26 @@ function detectZhihuUrlType(url: string): ZhihuUrlType {
   return "unknown";
 }
 
-// Zhihu mobile app public OAuth token — used for the v4 JSON API
-const ZHIHU_API_TOKEN = "c3cef7c66a1843f8b3a9e6a1e3160e20";
+function truncateAtBoundary(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  // 在 maxChars 范围内找段落/句子边界
+  const candidates = [
+    text.lastIndexOf("\n\n", maxChars),
+    text.lastIndexOf("。", maxChars),
+    text.lastIndexOf("！", maxChars),
+    text.lastIndexOf("？", maxChars),
+    text.lastIndexOf("\n", maxChars),
+    text.lastIndexOf(". ", maxChars),
+  ];
+  const cutPoint = Math.max(...candidates.filter((i) => i > maxChars * 0.7));
+  if (cutPoint > 0) {
+    return text.slice(0, cutPoint) + "\n\n[注：文章较长，已截断]";
+  }
+  return text.slice(0, maxChars) + "\n\n[注：文章较长，已截断]";
+}
 
 const ZHIHU_API_HEADERS = {
-  Authorization: `oauth ${ZHIHU_API_TOKEN}`,
+  Authorization: "", // 动态设置
   "User-Agent": "com.zhihu.android/Futureve/9.17.0 okhttp/4.12.0",
   "Accept-Encoding": "gzip",
   "x-api-version": "3.0.91",
@@ -131,21 +147,25 @@ const ZHIHU_API_HEADERS = {
   "x-app-za": "OS=Android&Release=12&Model=Pixel+6&VersionName=9.17.0&VersionCode=9170&Width=1080&Height=2340&Installer=GooglePlay&NetworkType=WiFi&Brand=Google&SDKVersion=31",
 };
 
+function getZhihuHeaders(): Record<string, string> {
+  return {
+    ...ZHIHU_API_HEADERS,
+    Authorization: `oauth ${ZHIHU_API_TOKEN}`,
+  };
+}
+
 function extractIdFromUrl(url: string, urlType: ZhihuUrlType): string {
   const u = new URL(url);
   const path = u.pathname;
   if (urlType === "article") {
-    // /p/12345678
     const m = path.match(/\/p\/(\d+)/);
     return m?.[1] ?? "";
   }
   if (urlType === "answer") {
-    // /question/xxx/answer/12345678
     const m = path.match(/\/answer\/(\d+)/);
     return m?.[1] ?? "";
   }
   if (urlType === "pin") {
-    // /pin/12345678
     const m = path.match(/\/pin\/(\d+)/);
     return m?.[1] ?? "";
   }
@@ -153,7 +173,6 @@ function extractIdFromUrl(url: string, urlType: ZhihuUrlType): string {
 }
 
 function htmlToText(html: string): string {
-  // Strip HTML tags and decode common entities
   return parse(html)
     .text
     .replace(/\s+/g, " ")
@@ -162,7 +181,7 @@ function htmlToText(html: string): string {
 
 async function fetchZhihuApi(endpoint: string): Promise<unknown> {
   const resp = await fetch(`https://www.zhihu.com/api/v4/${endpoint}`, {
-    headers: ZHIHU_API_HEADERS,
+    headers: getZhihuHeaders(),
   });
   if (!resp.ok) {
     throw new Error(`API 请求失败（HTTP ${resp.status}）`);
@@ -177,6 +196,10 @@ async function extractFromUrl(url: string): Promise<{ title: string; author: str
     throw new Error("无法识别链接类型，目前支持：知乎专栏、文章、问题回答、想法");
   }
 
+  if (!ZHIHU_API_TOKEN) {
+    throw new Error("服务端未配置知乎 API Token（ZHIHU_API_TOKEN）");
+  }
+
   const id = extractIdFromUrl(url, urlType);
   if (!id) {
     throw new Error("无法从链接中提取内容 ID，请检查链接格式是否正确。");
@@ -184,7 +207,6 @@ async function extractFromUrl(url: string): Promise<{ title: string; author: str
 
   try {
     if (urlType === "article") {
-      // GET /api/v4/articles/{id}
       const data = await fetchZhihuApi(
         `articles/${id}?include=data%5B%2A%5D.content%2Cauthor%2Ctitle`,
       ) as Record<string, unknown>;
@@ -194,11 +216,10 @@ async function extractFromUrl(url: string): Promise<{ title: string; author: str
         : "";
       const content = data.content ? htmlToText(String(data.content)) : "";
       if (!content) throw new Error("文章内容为空，可能需要登录才能查看。");
-      return { title, author, content: content.slice(0, 8000) };
+      return { title, author, content: truncateAtBoundary(content, 8000) };
     }
 
     if (urlType === "answer") {
-      // GET /api/v4/answers/{id}
       const data = await fetchZhihuApi(
         `answers/${id}?include=data%5B%2A%5D.content%2Cauthor%2Cquestion`,
       ) as Record<string, unknown>;
@@ -209,16 +230,14 @@ async function extractFromUrl(url: string): Promise<{ title: string; author: str
         : "";
       const content = data.content ? htmlToText(String(data.content)) : "";
       if (!content) throw new Error("回答内容为空，可能需要登录才能查看。");
-      return { title, author, content: content.slice(0, 8000) };
+      return { title, author, content: truncateAtBoundary(content, 8000) };
     }
 
     if (urlType === "pin") {
-      // GET /api/v4/pins/{id}
       const data = await fetchZhihuApi(`pins/${id}`) as Record<string, unknown>;
       const author = (data.author as Record<string, unknown>)?.name
         ? String((data.author as Record<string, unknown>).name)
         : "";
-      // Pin content is in content_html or a nested structure
       const contentObj = data.content as Array<Record<string, unknown>> | undefined;
       let rawContent = "";
       if (Array.isArray(contentObj)) {
@@ -233,11 +252,10 @@ async function extractFromUrl(url: string): Promise<{ title: string; author: str
       const content = rawContent ? htmlToText(rawContent) : "";
       if (!content) throw new Error("想法内容为空，可能需要登录才能查看。");
       const title = content.slice(0, 30) + (content.length > 30 ? "…" : "");
-      return { title, author, content: content.slice(0, 8000) };
+      return { title, author, content: truncateAtBoundary(content, 8000) };
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "未知错误";
-    // If API failed, surface a clear message with the text-paste fallback hint
     throw new Error(
       `${msg}\n\n💡 备选方案：切换到「粘贴文章文本」模式，在知乎页面复制正文后粘贴即可。`,
     );
@@ -269,12 +287,14 @@ async function generateNote(title: string, content: string, style: string): Prom
   const systemPrompt = PROMPTS[style];
   if (!systemPrompt) throw new Error(`未知风格: ${style}`);
 
+  const truncatedContent = truncateAtBoundary(content, 6000);
+
   const userMsg = `请根据下面的知乎文章，生成一条小红书笔记。
 
 文章标题：${title}
 
 文章正文：
-${content.slice(0, 6000)}`;
+${truncatedContent}`;
 
   const resp = await client.chat.completions.create({
     model,
