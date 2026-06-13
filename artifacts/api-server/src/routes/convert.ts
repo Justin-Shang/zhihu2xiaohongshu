@@ -119,129 +119,131 @@ function detectZhihuUrlType(url: string): ZhihuUrlType {
   return "unknown";
 }
 
-const FETCH_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  Accept:
-    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-  "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-  "Accept-Encoding": "gzip, deflate, br",
-  "Cache-Control": "no-cache",
-  Connection: "keep-alive",
-  Referer: "https://www.zhihu.com/",
-  "Sec-Fetch-Dest": "document",
-  "Sec-Fetch-Mode": "navigate",
-  "Sec-Fetch-Site": "none",
-  "Sec-Fetch-User": "?1",
-  "Upgrade-Insecure-Requests": "1",
-  "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-  "sec-ch-ua-mobile": "?0",
-  "sec-ch-ua-platform": '"Windows"',
+// Zhihu mobile app public OAuth token — used for the v4 JSON API
+const ZHIHU_API_TOKEN = "c3cef7c66a1843f8b3a9e6a1e3160e20";
+
+const ZHIHU_API_HEADERS = {
+  Authorization: `oauth ${ZHIHU_API_TOKEN}`,
+  "User-Agent": "com.zhihu.android/Futureve/9.17.0 okhttp/4.12.0",
+  "Accept-Encoding": "gzip",
+  "x-api-version": "3.0.91",
+  "x-app-version": "9.17.0",
+  "x-app-za": "OS=Android&Release=12&Model=Pixel+6&VersionName=9.17.0&VersionCode=9170&Width=1080&Height=2340&Installer=GooglePlay&NetworkType=WiFi&Brand=Google&SDKVersion=31",
 };
+
+function extractIdFromUrl(url: string, urlType: ZhihuUrlType): string {
+  const u = new URL(url);
+  const path = u.pathname;
+  if (urlType === "article") {
+    // /p/12345678
+    const m = path.match(/\/p\/(\d+)/);
+    return m?.[1] ?? "";
+  }
+  if (urlType === "answer") {
+    // /question/xxx/answer/12345678
+    const m = path.match(/\/answer\/(\d+)/);
+    return m?.[1] ?? "";
+  }
+  if (urlType === "pin") {
+    // /pin/12345678
+    const m = path.match(/\/pin\/(\d+)/);
+    return m?.[1] ?? "";
+  }
+  return "";
+}
+
+function htmlToText(html: string): string {
+  // Strip HTML tags and decode common entities
+  return parse(html)
+    .text
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchZhihuApi(endpoint: string): Promise<unknown> {
+  const resp = await fetch(`https://www.zhihu.com/api/v4/${endpoint}`, {
+    headers: ZHIHU_API_HEADERS,
+  });
+  if (!resp.ok) {
+    throw new Error(`API 请求失败（HTTP ${resp.status}）`);
+  }
+  return resp.json();
+}
 
 async function extractFromUrl(url: string): Promise<{ title: string; author: string; content: string }> {
   const urlType = detectZhihuUrlType(url);
 
-  const resp = await fetch(url, { headers: FETCH_HEADERS });
-  if (!resp.ok) {
-    if (resp.status === 403) {
-      throw new Error(
-        "知乎拒绝了抓取请求（403）。请改用「粘贴文章文本」模式：在知乎页面手动复制文章正文，粘贴到文本框即可。",
-      );
+  if (urlType === "unknown") {
+    throw new Error("无法识别链接类型，目前支持：知乎专栏、文章、问题回答、想法");
+  }
+
+  const id = extractIdFromUrl(url, urlType);
+  if (!id) {
+    throw new Error("无法从链接中提取内容 ID，请检查链接格式是否正确。");
+  }
+
+  try {
+    if (urlType === "article") {
+      // GET /api/v4/articles/{id}
+      const data = await fetchZhihuApi(
+        `articles/${id}?include=data%5B%2A%5D.content%2Cauthor%2Ctitle`,
+      ) as Record<string, unknown>;
+      const title = String(data.title ?? "无标题");
+      const author = (data.author as Record<string, unknown>)?.name
+        ? String((data.author as Record<string, unknown>).name)
+        : "";
+      const content = data.content ? htmlToText(String(data.content)) : "";
+      if (!content) throw new Error("文章内容为空，可能需要登录才能查看。");
+      return { title, author, content: content.slice(0, 8000) };
     }
-    if (resp.status === 404) {
-      throw new Error("链接不存在或已被删除（404），请检查链接是否正确。");
+
+    if (urlType === "answer") {
+      // GET /api/v4/answers/{id}
+      const data = await fetchZhihuApi(
+        `answers/${id}?include=data%5B%2A%5D.content%2Cauthor%2Cquestion`,
+      ) as Record<string, unknown>;
+      const question = data.question as Record<string, unknown> | undefined;
+      const title = question?.title ? String(question.title) : "未知问题";
+      const author = (data.author as Record<string, unknown>)?.name
+        ? String((data.author as Record<string, unknown>).name)
+        : "";
+      const content = data.content ? htmlToText(String(data.content)) : "";
+      if (!content) throw new Error("回答内容为空，可能需要登录才能查看。");
+      return { title, author, content: content.slice(0, 8000) };
     }
-    throw new Error(`抓取失败（HTTP ${resp.status}），请改用「粘贴文章文本」模式。`);
-  }
 
-  const html = await resp.text();
-  const root = parse(html);
-
-  let title = "";
-  let author = "";
-  let content = "";
-
-  if (urlType === "answer") {
-    // 知乎问题回答: zhihu.com/question/xxx/answer/xxx
-    // 标题 = 问题标题
-    const questionTitle =
-      root.querySelector("h1.QuestionHeader-title") ||
-      root.querySelector(".QuestionHeader-title") ||
-      root.querySelector("h1");
-    title = questionTitle?.text?.trim() || "未知问题";
-
-    // 作者：被选中答案的作者（第一个答案）
-    const authorEl =
-      root.querySelector(".AnswerItem .AuthorInfo-name") ||
-      root.querySelector(".AuthorInfo-name") ||
-      root.querySelector("span.UserLink");
-    author = authorEl?.text?.trim() || "";
-
-    // 内容：第一个回答的正文
-    const answerContent =
-      root.querySelector(".AnswerItem .RichContent-inner") ||
-      root.querySelector(".RichContent-inner") ||
-      root.querySelector(".AnswerItem .RichText");
-    content = answerContent?.text?.replace(/\s+/g, " ").trim() || "";
-
-  } else if (urlType === "pin") {
-    // 知乎想法: zhihu.com/pin/xxx
-    // 想法没有标题，内容即正文
-    const pinBody =
-      root.querySelector(".PinItem-content-body") ||
-      root.querySelector(".PinItem .RichText") ||
-      root.querySelector(".Pin-content");
-    content = pinBody?.text?.replace(/\s+/g, " ").trim() || "";
-
-    const authorEl =
-      root.querySelector(".PinItem .AuthorInfo-name") ||
-      root.querySelector(".AuthorInfo-name");
-    author = authorEl?.text?.trim() || "";
-
-    // 用内容前 30 字作标题
-    title = content.slice(0, 30).replace(/\s+/g, " ").trim() + (content.length > 30 ? "…" : "");
-
-  } else {
-    // 专栏文章 / 普通文章: zhuanlan.zhihu.com/p/xxx 或 zhihu.com/p/xxx
-    const titleEl =
-      root.querySelector("h1.Post-Title") ||
-      root.querySelector(".Post-Title") ||
-      root.querySelector("h1") ||
-      root.querySelector("title");
-    title = titleEl?.text?.trim() || "未知标题";
-
-    const authorEl =
-      root.querySelector("a.UserLink-link") ||
-      root.querySelector(".AuthorInfo-name") ||
-      root.querySelector("span.UserLink");
-    author = authorEl?.text?.trim() || "";
-
-    const richText =
-      root.querySelector("div.Post-RichText") ||
-      root.querySelector(".Post-RichText") ||
-      root.querySelector(".RichText");
-    content = richText?.text?.replace(/\s+/g, " ").trim() || "";
-  }
-
-  // 通用兜底：如果内容为空，尝试更宽泛的选择器
-  if (!content) {
-    const fallback =
-      root.querySelector(".RichText") ||
-      root.querySelector("article") ||
-      root.querySelector("main");
-    content = fallback?.text?.replace(/\s+/g, " ").trim() || "";
-  }
-
-  if (!content) {
+    if (urlType === "pin") {
+      // GET /api/v4/pins/{id}
+      const data = await fetchZhihuApi(`pins/${id}`) as Record<string, unknown>;
+      const author = (data.author as Record<string, unknown>)?.name
+        ? String((data.author as Record<string, unknown>).name)
+        : "";
+      // Pin content is in content_html or a nested structure
+      const contentObj = data.content as Array<Record<string, unknown>> | undefined;
+      let rawContent = "";
+      if (Array.isArray(contentObj)) {
+        rawContent = contentObj
+          .map((c) => (c.content ? String(c.content) : ""))
+          .join("\n");
+      } else if (data.content_html) {
+        rawContent = String(data.content_html);
+      } else if (data.excerpt_new) {
+        rawContent = String(data.excerpt_new);
+      }
+      const content = rawContent ? htmlToText(rawContent) : "";
+      if (!content) throw new Error("想法内容为空，可能需要登录才能查看。");
+      const title = content.slice(0, 30) + (content.length > 30 ? "…" : "");
+      return { title, author, content: content.slice(0, 8000) };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "未知错误";
+    // If API failed, surface a clear message with the text-paste fallback hint
     throw new Error(
-      urlType === "unknown"
-        ? "无法识别链接类型，目前支持：知乎专栏、文章、问题回答、想法"
-        : "无法提取页面内容，知乎可能需要登录才能查看该内容",
+      `${msg}\n\n💡 备选方案：切换到「粘贴文章文本」模式，在知乎页面复制正文后粘贴即可。`,
     );
   }
 
-  return { title: title || "无标题", author, content: content.slice(0, 8000) };
+  throw new Error("不支持的链接类型");
 }
 
 function extractFromText(text: string): { title: string; author: string; content: string } {
