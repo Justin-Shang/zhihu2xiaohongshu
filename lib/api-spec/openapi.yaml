@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: 知乎转小红书 API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: convert
+    description: 知乎转小红书转换
 paths:
   /healthz:
     get:
@@ -24,6 +26,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /convert:
+    post:
+      operationId: convertArticle
+      tags: [convert]
+      summary: 转换知乎文章为小红书笔记
+      description: 输入知乎URL或文章文本，AI生成三种风格的小红书笔记
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConvertInput"
+      responses:
+        "200":
+          description: 转换成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConvertResult"
+        "400":
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 服务器错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +68,49 @@ components:
       required:
         - status
 
+    ConvertInput:
+      type: object
+      required:
+        - inputType
+        - content
+      properties:
+        inputType:
+          type: string
+          enum: [url, text]
+          description: 输入类型：url（知乎链接）或 text（文章文本）
+        content:
+          type: string
+          description: 知乎文章URL或文章正文内容
+        style:
+          type: string
+          enum: [all, summary, opinion, tutorial]
+          description: 生成风格，默认all生成全部三种
+
+    ConvertResult:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          description: 文章标题
+        author:
+          type: ["string", "null"]
+          description: 文章作者
+        summary:
+          type: ["string", "null"]
+          description: 干货总结型笔记
+        opinion:
+          type: ["string", "null"]
+          description: 观点争议型笔记
+        tutorial:
+          type: ["string", "null"]
+          description: 实操教程型笔记
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
