@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useConvertArticle } from "@workspace/api-client-react";
+import { useClerk, useUser } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,9 +9,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Copy, CheckCircle2, Sparkles, ArrowRight, Loader2, PenTool, Link2 } from "lucide-react";
+import { Copy, CheckCircle2, Sparkles, ArrowRight, Loader2, PenTool, Link2, LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ConvertInputInputType, ConvertInputStyle, ConvertResult } from "@workspace/api-client-react";
+import { ConvertInputInputType, ConvertInputStyle } from "@workspace/api-client-react";
+
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function CopyButton({ text, className }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false);
@@ -45,6 +48,8 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
 }
 
 export default function Home() {
+  const { signOut } = useClerk();
+  const { user } = useUser();
   const [inputType, setInputType] = useState<ConvertInputInputType>("url");
   const [content, setContent] = useState("");
   const [style, setStyle] = useState<ConvertInputStyle>("all");
@@ -86,9 +91,27 @@ export default function Home() {
             </div>
             <span className="font-bold text-lg tracking-tight">知乎 <ArrowRight className="inline h-4 w-4 mx-0.5 text-muted-foreground" /> 小红书</span>
           </div>
-          <div className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
-            AI 灵感引擎已就绪
+          <div className="flex items-center gap-3">
+            <div className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
+              AI 灵感引擎已就绪
+            </div>
+            {user && (
+              <div className="flex items-center gap-2 pl-3 border-l border-border">
+                <span className="text-sm text-muted-foreground hidden sm:block">
+                  {user.primaryEmailAddress?.emailAddress || user.fullName}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => signOut({ redirectUrl: basePath || "/" })}
+                  title="退出登录"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </header>

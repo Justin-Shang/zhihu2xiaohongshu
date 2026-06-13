@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { parse } from "node-html-parser";
 import OpenAI from "openai";
+import { getAuth } from "@clerk/express";
 import { ConvertArticleBody } from "@workspace/api-zod";
 
 const router = Router();
@@ -192,6 +193,12 @@ ${content.slice(0, 6000)}`;
 }
 
 router.post("/convert", async (req, res) => {
+  const auth = getAuth(req);
+  if (!auth?.userId) {
+    res.status(401).json({ error: "请先登录" });
+    return;
+  }
+
   const parsed = ConvertArticleBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "参数错误：" + parsed.error.message });

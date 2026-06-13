@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <rect width="48" height="48" rx="12" fill="url(#grad)"/>
+  <defs>
+    <linearGradient id="grad" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f43f5e"/>
+      <stop offset="100%" stop-color="#fb7185"/>
+    </linearGradient>
+  </defs>
+  <text x="24" y="32" text-anchor="middle" font-size="22" font-family="serif" font-weight="bold" fill="white">知</text>
+  <path d="M30 18 L38 18" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <path d="M34 14 L34 22" stroke="white" stroke-width="2" stroke-linecap="round"/>
+</svg>
