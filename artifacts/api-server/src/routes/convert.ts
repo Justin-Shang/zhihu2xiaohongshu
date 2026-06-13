@@ -100,53 +100,128 @@ const PROMPTS: Record<string, string> = {
 #标签 #标签 #标签`,
 };
 
-async function extractFromUrl(url: string): Promise<{ title: string; author: string; content: string }> {
-  const resp = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-    },
-  });
+type ZhihuUrlType = "article" | "answer" | "pin" | "unknown";
 
+function detectZhihuUrlType(url: string): ZhihuUrlType {
+  try {
+    const u = new URL(url);
+    const host = u.hostname;
+    const path = u.pathname;
+    if (host === "zhuanlan.zhihu.com" && path.startsWith("/p/")) return "article";
+    if (host === "www.zhihu.com" || host === "zhihu.com") {
+      if (path.startsWith("/p/")) return "article";
+      if (path.includes("/answer/")) return "answer";
+      if (path.startsWith("/pin/")) return "pin";
+    }
+  } catch {
+    // ignore
+  }
+  return "unknown";
+}
+
+const FETCH_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+  Referer: "https://www.zhihu.com/",
+};
+
+async function extractFromUrl(url: string): Promise<{ title: string; author: string; content: string }> {
+  const urlType = detectZhihuUrlType(url);
+
+  const resp = await fetch(url, { headers: FETCH_HEADERS });
   if (!resp.ok) {
-    throw new Error(`抓取失败: HTTP ${resp.status}`);
+    throw new Error(`抓取失败: HTTP ${resp.status}，请检查链接是否正确`);
   }
 
   const html = await resp.text();
   const root = parse(html);
 
-  // Extract title
-  const titleEl =
-    root.querySelector("h1.Post-Title") ||
-    root.querySelector("h1") ||
-    root.querySelector("title");
-  const title = titleEl?.text?.trim() || "未知标题";
-
-  // Extract author
-  const authorEl =
-    root.querySelector("a.UserLink-link") ||
-    root.querySelector("span.AuthorInfo-name");
-  const author = authorEl?.text?.trim() || "";
-
-  // Extract content
-  const richText = root.querySelector("div.Post-RichText");
+  let title = "";
+  let author = "";
   let content = "";
-  if (richText) {
-    content = richText.text.replace(/\s+/g, " ").trim();
+
+  if (urlType === "answer") {
+    // 知乎问题回答: zhihu.com/question/xxx/answer/xxx
+    // 标题 = 问题标题
+    const questionTitle =
+      root.querySelector("h1.QuestionHeader-title") ||
+      root.querySelector(".QuestionHeader-title") ||
+      root.querySelector("h1");
+    title = questionTitle?.text?.trim() || "未知问题";
+
+    // 作者：被选中答案的作者（第一个答案）
+    const authorEl =
+      root.querySelector(".AnswerItem .AuthorInfo-name") ||
+      root.querySelector(".AuthorInfo-name") ||
+      root.querySelector("span.UserLink");
+    author = authorEl?.text?.trim() || "";
+
+    // 内容：第一个回答的正文
+    const answerContent =
+      root.querySelector(".AnswerItem .RichContent-inner") ||
+      root.querySelector(".RichContent-inner") ||
+      root.querySelector(".AnswerItem .RichText");
+    content = answerContent?.text?.replace(/\s+/g, " ").trim() || "";
+
+  } else if (urlType === "pin") {
+    // 知乎想法: zhihu.com/pin/xxx
+    // 想法没有标题，内容即正文
+    const pinBody =
+      root.querySelector(".PinItem-content-body") ||
+      root.querySelector(".PinItem .RichText") ||
+      root.querySelector(".Pin-content");
+    content = pinBody?.text?.replace(/\s+/g, " ").trim() || "";
+
+    const authorEl =
+      root.querySelector(".PinItem .AuthorInfo-name") ||
+      root.querySelector(".AuthorInfo-name");
+    author = authorEl?.text?.trim() || "";
+
+    // 用内容前 30 字作标题
+    title = content.slice(0, 30).replace(/\s+/g, " ").trim() + (content.length > 30 ? "…" : "");
+
   } else {
-    const contentDiv = root.querySelector("div.content") || root.querySelector("article");
-    if (contentDiv) {
-      content = contentDiv.text.replace(/\s+/g, " ").trim();
-    }
+    // 专栏文章 / 普通文章: zhuanlan.zhihu.com/p/xxx 或 zhihu.com/p/xxx
+    const titleEl =
+      root.querySelector("h1.Post-Title") ||
+      root.querySelector(".Post-Title") ||
+      root.querySelector("h1") ||
+      root.querySelector("title");
+    title = titleEl?.text?.trim() || "未知标题";
+
+    const authorEl =
+      root.querySelector("a.UserLink-link") ||
+      root.querySelector(".AuthorInfo-name") ||
+      root.querySelector("span.UserLink");
+    author = authorEl?.text?.trim() || "";
+
+    const richText =
+      root.querySelector("div.Post-RichText") ||
+      root.querySelector(".Post-RichText") ||
+      root.querySelector(".RichText");
+    content = richText?.text?.replace(/\s+/g, " ").trim() || "";
+  }
+
+  // 通用兜底：如果内容为空，尝试更宽泛的选择器
+  if (!content) {
+    const fallback =
+      root.querySelector(".RichText") ||
+      root.querySelector("article") ||
+      root.querySelector("main");
+    content = fallback?.text?.replace(/\s+/g, " ").trim() || "";
   }
 
   if (!content) {
-    content = root.querySelector("body")?.text?.replace(/\s+/g, " ").trim() || "无法提取内容";
+    throw new Error(
+      urlType === "unknown"
+        ? "无法识别链接类型，目前支持：知乎专栏、文章、问题回答、想法"
+        : "无法提取页面内容，知乎可能需要登录才能查看该内容",
+    );
   }
 
-  return { title, author, content: content.slice(0, 8000) };
+  return { title: title || "无标题", author, content: content.slice(0, 8000) };
 }
 
 function extractFromText(text: string): { title: string; author: string; content: string } {

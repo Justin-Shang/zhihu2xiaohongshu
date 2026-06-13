@@ -149,13 +149,20 @@ export default function Home() {
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="url" className="mt-0">
-                  <Input 
-                    placeholder="https://zhuanlan.zhihu.com/p/..." 
-                    value={inputType === "url" ? content : ""}
-                    onChange={(e) => setContent(e.target.value)}
-                    className="h-14 px-4 text-base bg-card shadow-sm border-muted-foreground/20 focus-visible:ring-primary/30"
-                    data-testid="input-url"
-                  />
+                  <div className="space-y-2">
+                    <Input 
+                      placeholder="支持专栏、文章、问题回答、想法链接…" 
+                      value={inputType === "url" ? content : ""}
+                      onChange={(e) => setContent(e.target.value)}
+                      className="h-14 px-4 text-base bg-card shadow-sm border-muted-foreground/20 focus-visible:ring-primary/30"
+                      data-testid="input-url"
+                    />
+                    <p className="text-xs text-muted-foreground px-1">
+                      支持：专栏文章 <code className="bg-muted px-1 rounded text-[11px]">zhuanlan.zhihu.com/p/…</code>、
+                      问题回答 <code className="bg-muted px-1 rounded text-[11px]">zhihu.com/question/…/answer/…</code>、
+                      想法 <code className="bg-muted px-1 rounded text-[11px]">zhihu.com/pin/…</code>
+                    </p>
+                  </div>
                 </TabsContent>
                 <TabsContent value="text" className="mt-0">
                   <Textarea 
