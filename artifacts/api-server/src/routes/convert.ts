@@ -121,10 +121,22 @@ function detectZhihuUrlType(url: string): ZhihuUrlType {
 
 const FETCH_HEADERS = {
   "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+  "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Cache-Control": "no-cache",
+  Connection: "keep-alive",
   Referer: "https://www.zhihu.com/",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+  "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"Windows"',
 };
 
 async function extractFromUrl(url: string): Promise<{ title: string; author: string; content: string }> {
@@ -132,7 +144,15 @@ async function extractFromUrl(url: string): Promise<{ title: string; author: str
 
   const resp = await fetch(url, { headers: FETCH_HEADERS });
   if (!resp.ok) {
-    throw new Error(`抓取失败: HTTP ${resp.status}，请检查链接是否正确`);
+    if (resp.status === 403) {
+      throw new Error(
+        "知乎拒绝了抓取请求（403）。请改用「粘贴文章文本」模式：在知乎页面手动复制文章正文，粘贴到文本框即可。",
+      );
+    }
+    if (resp.status === 404) {
+      throw new Error("链接不存在或已被删除（404），请检查链接是否正确。");
+    }
+    throw new Error(`抓取失败（HTTP ${resp.status}），请改用「粘贴文章文本」模式。`);
   }
 
   const html = await resp.text();
