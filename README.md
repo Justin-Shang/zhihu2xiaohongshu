@@ -1,5 +1,11 @@
 # zhihu2xiaohongshu 📝→📱
 
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C8?logo=typescript)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite)](https://vitejs.dev/)
+[![Express](https://img.shields.io/badge/Express-5-000000?logo=express)](https://expressjs.com/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
 **知乎专栏/回答/想法 → 小红书笔记智能转换工具**
 
 一键把知乎上的深度内容转成小红书爆款笔记风格。支持三种知乎内容源 + 三种笔记风格。
@@ -96,6 +102,6 @@ Replit Deploy 自动部署。生产环境需配置：
 1. `ALLOWED_ORIGINS` — 允许的前端域名（逗号分隔）
 2. 所有必需环境变量
 
-## 开源协议
+## License
 
-MIT
+[MIT](LICENSE)
